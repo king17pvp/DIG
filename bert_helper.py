@@ -8,13 +8,13 @@ def nn_init(device, dataset, returns=False):
 	global model, tokenizer
 	if dataset == 'sst2':
 		tokenizer	= AutoTokenizer.from_pretrained('textattack/bert-base-uncased-SST-2')
-		model		= AutoModelForSequenceClassification.from_pretrained('textattack/bert-base-uncased-SST-2', return_dict=False)
+		model		= AutoModelForSequenceClassification.from_pretrained('textattack/bert-base-uncased-SST-2')
 	elif dataset == 'imdb':
 		tokenizer	= AutoTokenizer.from_pretrained('textattack/bert-base-uncased-imdb')
-		model		= AutoModelForSequenceClassification.from_pretrained('textattack/bert-base-uncased-imdb', return_dict=False)
+		model		= AutoModelForSequenceClassification.from_pretrained('textattack/bert-base-uncased-imdb')
 	elif dataset == 'rotten':
 		tokenizer	= AutoTokenizer.from_pretrained('textattack/bert-base-uncased-rotten-tomatoes')
-		model		= AutoModelForSequenceClassification.from_pretrained('textattack/bert-base-uncased-rotten-tomatoes', return_dict=False)
+		model		= AutoModelForSequenceClassification.from_pretrained('textattack/bert-base-uncased-rotten-tomatoes')
 
 	model.to(device)
 	model.eval()
@@ -28,7 +28,7 @@ def move_to_device(device):
 	model.to(device)
 
 def predict(model, inputs_embeds, attention_mask=None):
-	return model(inputs_embeds=inputs_embeds, attention_mask=attention_mask)[0]
+	return model(inputs_embeds=inputs_embeds, attention_mask=attention_mask).logits
 
 def nn_forward_func(input_embed, attention_mask=None, position_embed=None, type_embed=None, return_all_logits=False):
 	global model
@@ -48,7 +48,7 @@ def load_mappings(dataset, knn_nbrs=500):
 	return word_idx_map, word_features, adj
 
 def construct_input_ref_pair(tokenizer, text, ref_token_id, sep_token_id, cls_token_id, device):
-	text_ids		= tokenizer.encode(text, add_special_tokens=False, truncation=True, max_length=tokenizer.max_len_single_sentence)
+	text_ids		= tokenizer.encode(text, add_special_tokens=False, truncation=True, max_length=tokenizer.model_max_length)
 	input_ids		= [cls_token_id] + text_ids + [sep_token_id]	# construct input token ids
 	ref_input_ids	= [cls_token_id] + [ref_token_id] * len(text_ids) + [sep_token_id]	# construct reference token ids
 
