@@ -1,11 +1,7 @@
 import torch, sys, pickle
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
-
-model, tokenizer = None, None
-
 def nn_init(device, dataset, returns=False):
-	global model, tokenizer
 	if dataset == 'sst2':
 		tokenizer	= AutoTokenizer.from_pretrained('textattack/bert-base-uncased-SST-2')
 		model		= AutoModelForSequenceClassification.from_pretrained('textattack/bert-base-uncased-SST-2')
@@ -22,16 +18,16 @@ def nn_init(device, dataset, returns=False):
 
 	if returns:
 		return model, tokenizer
+	else:
+		return model, tokenizer
 
-def move_to_device(device):
-	global model
+def move_to_device(model, device):
 	model.to(device)
 
 def predict(model, inputs_embeds, attention_mask=None):
 	return model(inputs_embeds=inputs_embeds, attention_mask=attention_mask).logits
 
-def nn_forward_func(input_embed, attention_mask=None, position_embed=None, type_embed=None, return_all_logits=False):
-	global model
+def nn_forward_func(model, input_embed, attention_mask=None, position_embed=None, type_embed=None, return_all_logits=False):
 	embeds	= input_embed + position_embed + type_embed
 	embeds	= model.bert.embeddings.dropout(model.bert.embeddings.LayerNorm(embeds))
 	pred	= predict(model, embeds, attention_mask=attention_mask)
@@ -54,8 +50,7 @@ def construct_input_ref_pair(tokenizer, text, ref_token_id, sep_token_id, cls_to
 
 	return torch.tensor([input_ids], device=device), torch.tensor([ref_input_ids], device=device)
 
-def construct_input_ref_pos_id_pair(input_ids, device):
-	global model
+def construct_input_ref_pos_id_pair(model, input_ids, device):
 	seq_length			= input_ids.size(1)
 	position_ids 		= model.bert.embeddings.position_ids[:,0:seq_length].to(device)
 	ref_position_ids	= model.bert.embeddings.position_ids[:,0:seq_length].to(device)
@@ -71,8 +66,7 @@ def construct_input_ref_token_type_pair(input_ids, device):
 def construct_attention_mask(input_ids):
 	return torch.ones_like(input_ids)
 
-def get_word_embeddings():
-	global model
+def get_word_embeddings(model):
 	return model.bert.embeddings.word_embeddings.weight
 
 def construct_word_embedding(model, input_ids):
@@ -96,22 +90,19 @@ def construct_sub_embedding(model, input_ids, ref_input_ids, position_ids, ref_p
 			(input_position_embeddings, ref_input_position_embeddings), \
 			(input_type_embeddings, ref_input_type_embeddings)
 
-def get_base_token_emb(device):
-	global model
+def get_base_token_emb(model, tokenizer, device):
 	return construct_word_embedding(model, torch.tensor([tokenizer.pad_token_id], device=device))
 
-def get_tokens(text_ids):
-	global tokenizer
+def get_tokens(tokenizer, text_ids):
 	return tokenizer.convert_ids_to_tokens(text_ids.squeeze())
 
-def get_inputs(text, device):
-	global model, tokenizer
+def get_inputs(model, tokenizer, text, device):
 	ref_token_id = tokenizer.pad_token_id
 	sep_token_id = tokenizer.sep_token_id
 	cls_token_id = tokenizer.cls_token_id
 
 	input_ids, ref_input_ids		= construct_input_ref_pair(tokenizer, text, ref_token_id, sep_token_id, cls_token_id, device)
-	position_ids, ref_position_ids	= construct_input_ref_pos_id_pair(input_ids, device)
+	position_ids, ref_position_ids	= construct_input_ref_pos_id_pair(model, input_ids, device)
 	type_ids, ref_type_ids			= construct_input_ref_token_type_pair(input_ids, device)
 	attention_mask					= construct_attention_mask(input_ids)
 

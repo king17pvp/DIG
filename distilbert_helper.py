@@ -1,11 +1,7 @@
 import torch, sys, pickle
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
-
-model, tokenizer = None, None
-
 def nn_init(device, dataset, returns=False):
-	global model, tokenizer
 	if dataset == 'sst2':
 		tokenizer	= AutoTokenizer.from_pretrained("distilbert-base-uncased-finetuned-sst-2-english")
 		model		= AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased-finetuned-sst-2-english")
@@ -22,23 +18,23 @@ def nn_init(device, dataset, returns=False):
 
 	if returns:
 		return model, tokenizer
+	else:
+		return model, tokenizer
 
-def move_to_device(device):
-	global model
+def move_to_device(model, device):
 	model.to(device)
 
 def predict(model, inputs_embeds, attention_mask=None):
 	return model(inputs_embeds=inputs_embeds, attention_mask=attention_mask).logits
 
-def nn_forward_func(input_embed, attention_mask=None, position_embed=None, type_embed=None, return_all_logits=False):
-	global model
-	embeds	= input_embed + position_embed
-	embeds	= model.distilbert.embeddings.dropout(model.distilbert.embeddings.LayerNorm(embeds))
-	pred	= predict(model, embeds, attention_mask=attention_mask)
-	if return_all_logits:
-		return pred
-	else:
-		return pred.max(1).values
+def nn_forward_func(model, input_embed, attention_mask=None, position_embed=None, type_embed=None, return_all_logits=False):
+    embeds	= input_embed + position_embed
+    embeds	= model.distilbert.embeddings.dropout(model.distilbert.embeddings.LayerNorm(embeds))
+    pred	= predict(model, embeds, attention_mask=attention_mask)
+    if return_all_logits:
+        return pred
+    else:
+        return pred.max(1).values
 
 def load_mappings(dataset, knn_nbrs=500):
 	with open(f'processed/knns/distilbert_{dataset}_{knn_nbrs}.pkl', 'rb') as f:
@@ -48,9 +44,9 @@ def load_mappings(dataset, knn_nbrs=500):
 	return word_idx_map, word_features, adj
 
 def construct_input_ref_pair(tokenizer, text, ref_token_id, sep_token_id, cls_token_id, device):
-	text_ids		= tokenizer.encode(text, add_special_tokens=False, truncation=True, max_length=tokenizer.model_max_length)
-	input_ids		= [cls_token_id] + text_ids + [sep_token_id]	# construct input token ids
-	ref_input_ids	= [cls_token_id] + [ref_token_id] * len(text_ids) + [sep_token_id]	# construct reference token ids
+	text_ids		= tokenizer(text, truncation=True, return_special_tokens_mask=True)
+	input_ids		= text_ids['input_ids']	# construct input token ids
+	ref_input_ids	= [cls_token_id] + [ref_token_id] * (len(text_ids['input_ids']) - 2) + [sep_token_id]	# construct reference token ids
 
 	return torch.tensor([input_ids], device=device), torch.tensor([ref_input_ids], device=device)
 
@@ -66,8 +62,7 @@ def construct_input_ref_pos_id_pair(input_ids, device):
 def construct_attention_mask(input_ids):
 	return torch.ones_like(input_ids)
 
-def get_word_embeddings():
-	global model
+def get_word_embeddings(model):
 	return model.distilbert.embeddings.word_embeddings.weight
 
 def construct_word_embedding(model, input_ids):
@@ -84,16 +79,13 @@ def construct_sub_embedding(model, input_ids, ref_input_ids, position_ids, ref_p
 
 	return (input_embeddings, ref_input_embeddings), (input_position_embeddings, ref_input_position_embeddings)
 
-def get_base_token_emb(device):
-	global model
+def get_base_token_emb(model, tokenizer, device):
 	return construct_word_embedding(model, torch.tensor([tokenizer.pad_token_id], device=device))
 
-def get_tokens(text_ids):
-	global tokenizer
+def get_tokens(tokenizer, text_ids):
 	return tokenizer.convert_ids_to_tokens(text_ids.squeeze())
 
-def get_inputs(text, device):
-	global model, tokenizer
+def get_inputs(model, tokenizer, text, device):
 	ref_token_id = tokenizer.pad_token_id
 	sep_token_id = tokenizer.sep_token_id
 	cls_token_id = tokenizer.cls_token_id

@@ -36,65 +36,32 @@ def dig_bert(
 ) -> Dict[str, Union[List[str], torch.Tensor, float]]:
     """
     DIG (Discretized Integrated Gradients) attribution analysis for BERT models.
-    
-    Args:
-        text: Input text to analyze
-        model_name: HuggingFace model name
-        dataset: Dataset type for auxiliary data ('sst2', 'imdb', 'rotten')
-        steps: Number of integration steps
-        topk: Top-k percentage for evaluation metrics
-        factor: Factor for path upscaling
-        strategy: Path generation strategy ('greedy', 'maxcount')
-        knn_nbrs: Number of KNN neighbors for auxiliary data
-        device: Device to run on
-        show_special_tokens: Whether to include special tokens in output
-        seed: Random seed for reproducibility
-        
-    Returns:
-        dict: {
-            'tokens': List of tokens,
-            'attributions': Attribution scores tensor,
-            'logits': Model logits tensor,
-            'log_odd': Log-odds metric,
-            'comp': Comprehensiveness metric,
-            'suff': Sufficiency metric,
-            'predicted_label': Predicted class,
-            'time': Computation time
-        }
     """
-    
-    # Set random seeds for reproducibility
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
     
     start_time = time.perf_counter()
     
-    # --- Load model/tokenizer and auxiliary data ---
     global cache
     cache_key = f"{model_name}_{dataset}"
     
     if cache.get(cache_key, None) is None:
         print(f"Model {model_name} not found in cache, loading from scratch")
         tmp = {}
-        
+        print(model_name, dataset)
         # Import model-specific functions based on model name
         if "distilbert" in model_name.lower():
+            print(f"Using distilbert model")
             from distilbert_helper import nn_forward_func, nn_init, get_inputs, get_base_token_emb, get_word_embeddings, get_tokens, load_mappings
         elif "bert" in model_name.lower():
             from bert_helper import nn_forward_func, nn_init, get_inputs, get_base_token_emb, get_word_embeddings, get_tokens, load_mappings
         else:
             raise ValueError(f"Unsupported model type: {model_name}")
         
-        # Initialize model and tokenizer
-        nn_init(device, dataset)
-        
-        # Load auxiliary data (KNN mappings)
+        model, tokenizer = nn_init(device, dataset)
         auxiliary_data = load_mappings(dataset, knn_nbrs=knn_nbrs)
+        base_token_emb = get_base_token_emb(model, tokenizer, device)
         
-        # Get base token embedding
-        base_token_emb = get_base_token_emb(device)
-        
+        tmp["model"] = model
+        tmp["tokenizer"] = tokenizer
         tmp["nn_forward_func"] = nn_forward_func
         tmp["get_inputs"] = get_inputs
         tmp["get_base_token_emb"] = get_base_token_emb
@@ -105,6 +72,8 @@ def dig_bert(
         cache[cache_key] = tmp
     else:
         print(f"Using cached model {model_name}")
+        model = cache[cache_key]["model"]
+        tokenizer = cache[cache_key]["tokenizer"]
         nn_forward_func = cache[cache_key]["nn_forward_func"]
         get_inputs = cache[cache_key]["get_inputs"]
         get_base_token_emb = cache[cache_key]["get_base_token_emb"]
@@ -112,24 +81,11 @@ def dig_bert(
         auxiliary_data = cache[cache_key]["auxiliary_data"]
         base_token_emb = cache[cache_key]["base_token_emb"]
     
-    # Initialize DIG attribution function
-    attr_func = DiscretetizedIntegratedGradients(nn_forward_func)
+    attr_func = DiscretetizedIntegratedGradients(lambda *args, **kwargs: nn_forward_func(model, *args, **kwargs))
+    inputs = get_inputs(model, tokenizer, text, device)
     
-    # Process the input sentence
-    print(f"Processing sentence: '{text}'")
-    inputs = get_inputs(text, device)
-    
-    # Extract components
     input_ids, ref_input_ids, input_embed, ref_input_embed, position_embed, ref_position_embed, type_embed, ref_type_embed, attention_mask = inputs
-    
-    # Get initial logits for the original input
-    print("Computing initial logits...")
-    initial_logits = nn_forward_func(input_embed, attention_mask=attention_mask, position_embed=position_embed, type_embed=type_embed, return_all_logits=True)
-    print(f"Initial logits: {initial_logits}")
-    predicted_label = int(torch.argmax(initial_logits).item())
-    print(f"Predicted label: {predicted_label}")
-    
-    # Generate monotonic paths for DIG
+    initial_logits = model(inputs_embeds=input_embed, attention_mask=attention_mask).logits[0]
     print("Generating monotonic paths...")
     scaled_features = monotonic_paths.scale_inputs(
         input_ids.squeeze().tolist(), 
@@ -140,30 +96,26 @@ def dig_bert(
         strategy=strategy
     )
     
-    # Run DIG attribution
-    print("Computing DIG attributions...")
     attr = run_dig_explanation(
         attr_func, scaled_features, position_embed, type_embed, attention_mask, 
         (2**factor)*(steps+1)+1
     )
     
-    # Compute evaluation metrics
-    print("Computing evaluation metrics...")
     log_odd, pred = eval_log_odds(
-        nn_forward_func, input_embed, position_embed, type_embed, attention_mask, 
+        lambda *args, **kwargs: nn_forward_func(model, *args, **kwargs), input_embed, position_embed, type_embed, attention_mask, 
         base_token_emb, attr, topk=topk
     )
     comp = eval_comprehensiveness(
-        nn_forward_func, input_embed, position_embed, type_embed, attention_mask, 
+        lambda *args, **kwargs: nn_forward_func(model, *args, **kwargs), input_embed, position_embed, type_embed, attention_mask, 
         base_token_emb, attr, topk=topk
     )
     suff = eval_sufficiency(
-        nn_forward_func, input_embed, position_embed, type_embed, attention_mask, 
+        lambda *args, **kwargs: nn_forward_func(model, *args, **kwargs), input_embed, position_embed, type_embed, attention_mask, 
         base_token_emb, attr, topk=topk
     )
     
     # Get tokens for interpretation
-    tokens = get_tokens(input_ids)
+    tokens = get_tokens(tokenizer, input_ids)
     
     # Filter special tokens if requested
     if not show_special_tokens:
@@ -181,44 +133,29 @@ def dig_bert(
         "log_odd": float(log_odd),
         "comp": float(comp),
         "suff": float(suff),
-        "predicted_label": int(predicted_label),
         "time": end_time - start_time
     }
 
 
 def main():
     """Example usage of dig_bert function."""
+    sentence = "This is a really bad movie, although it has a promising start, it ended on a very low note"
+    res_dig = dig_bert(
+        text=sentence,
+        model_name="distilbert-base-uncased-finetuned-sst-2-english",
+        dataset="sst2",
+        steps=30,
+        topk=20,
+        factor=1,
+        strategy="greedy",
+        show_special_tokens=False
+    )
     
-    # The sentence to analyze
-    sentence = "This is a really bad movie, although it has a promising start, it ended on a very low note."
-    
-    try:
-        # Run DIG analysis
-        results = dig_bert(
-            text=sentence,
-            model_name="distilbert-base-uncased-finetuned-sst-2-english",
-            dataset="sst2",
-            steps=30,
-            topk=20,
-            factor=0,
-            strategy="greedy",
-            show_special_tokens=False
-        )
-        
-        # Print results
-        print(f"Logits: {results['logits']}")
-        print(f"Attributions: {results['attributions']}")
-        for tok, val in zip(results["tokens"], results["attributions"]): 
-            print(f"{tok:>12s} : {val:+.6f}")
-        
-    except Exception as e:
-        print(f"Error during analysis: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    
-    return True
+    print(f"Log odds: {res_dig['log_odd']}")
+    print(f"Comprehensiveness: {res_dig['comp']}")
+    print(f"Sufficiency: {res_dig['suff']}")
+    for tok, val in zip(res_dig["tokens"], res_dig["attributions"]): 
+        print(f"{tok:>12s} : {val:+.6f}")
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    main()
