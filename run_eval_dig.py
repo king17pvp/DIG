@@ -6,6 +6,8 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='distilbert', help='Model name or path')
+parser.add_argument('--dataset', choices=['sst2', 'imdb', 'rotten'])
+parser.add_argument('--strategy', default = 'greedy', choices=['greedy', 'maxcount'], help='The algorithm to find the next anchor point')
 args = parser.parse_args()
 model = args.model
 if model == 'distilbert':
@@ -14,7 +16,17 @@ elif model == 'bert':
     model_name = "textattack/bert-base-uncased-SST-2"
 elif model == 'roberta':
     model_name = "textattack/roberta-base-SST-2"
-dataset = load_dataset('glue', 'sst2')['test']
+    
+if args.dataset == 'imdb':
+    dataset	= load_dataset('imdb')['test']
+    data	= list(zip(dataset['text'], dataset['label']))
+    data	= random.sample(data, 2000)
+elif args.dataset == 'sst2':
+    dataset	= load_dataset('glue', 'sst2')['test']
+    data	= list(zip(dataset['sentence'], dataset['label'], dataset['idx']))
+elif args.dataset == 'rotten':
+    dataset	= load_dataset('rotten_tomatoes')['test']
+    data	= list(zip(dataset['text'], dataset['label']))
 data = list(zip(dataset['sentence'], dataset['label'], dataset['idx']))
 print('Starting attribution computation...')
 inputs = []
@@ -22,7 +34,7 @@ log_odds, comps, suffs, count, total_time = 0, 0, 0, 0, 0
 print_step = 100
 for row in tqdm(data):
     text = row[0]
-    res_dig = dig_bert(text, model_name=model_name, dataset='sst2', steps=30, factor=0, strategy='greedy', topk=20)
+    res_dig = dig_bert(text, model_name=model_name, dataset=args.dataset, steps=30, factor=0, strategy=args.strategy, topk=20)
     log_odd, comp, suff = res_dig['log_odd'], res_dig['comp'], res_dig['suff']
     total_time += res_dig['time']
     log_odds += res_dig['log_odd']
