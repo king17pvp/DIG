@@ -49,8 +49,9 @@ def dig_bert(
         print(model_name, dataset)
         # Import model-specific functions based on model name
         if "distilbert" in model_name.lower():
-            print(f"Using distilbert model")
             from distilbert_helper import nn_forward_func, nn_init, get_inputs, get_base_token_emb, get_word_embeddings, get_tokens, load_mappings
+        elif "roberta" in model_name.lower():
+            from roberta_helper import nn_forward_func, nn_init, get_inputs, get_base_token_emb, get_word_embeddings, get_tokens, load_mappings
         elif "bert" in model_name.lower():
             from bert_helper import nn_forward_func, nn_init, get_inputs, get_base_token_emb, get_word_embeddings, get_tokens, load_mappings
         else:
@@ -71,7 +72,7 @@ def dig_bert(
         
         cache[cache_key] = tmp
     else:
-        print(f"Using cached model {model_name}")
+        # print(f"Using cached model {model_name}")
         model = cache[cache_key]["model"]
         tokenizer = cache[cache_key]["tokenizer"]
         nn_forward_func = cache[cache_key]["nn_forward_func"]
@@ -86,7 +87,6 @@ def dig_bert(
     
     input_ids, ref_input_ids, input_embed, ref_input_embed, position_embed, ref_position_embed, type_embed, ref_type_embed, attention_mask = inputs
     initial_logits = model(inputs_embeds=input_embed, attention_mask=attention_mask).logits[0]
-    print("Generating monotonic paths...")
     scaled_features = monotonic_paths.scale_inputs(
         input_ids.squeeze().tolist(), 
         ref_input_ids.squeeze().tolist(),

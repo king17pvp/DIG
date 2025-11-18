@@ -18,11 +18,10 @@ def calculate_attributions(inputs, device, args, attr_func, base_token_emb, nn_f
 
 	# move inputs to main device
 	inp = [x.to(device) if x is not None else None for x in inputs]
-
 	# compute attribution
 	scaled_features, input_ids, ref_input_ids, input_embed, ref_input_embed, position_embed, ref_position_embed, type_embed, ref_type_embed, attention_mask = inp
 	attr = run_dig_explanation(attr_func, scaled_features, position_embed, type_embed, attention_mask, (2**args.factor)*(args.steps+1)+1)
-
+	print(f"Attr: {attr}")
 	# compute metrics
 	log_odd, pred	= eval_log_odds(nn_forward_func, input_embed, position_embed, type_embed, attention_mask, base_token_emb, attr, topk=args.topk)
 	comp			= eval_comprehensiveness(nn_forward_func, input_embed, position_embed, type_embed, attention_mask, base_token_emb, attr, topk=args.topk)
@@ -54,10 +53,9 @@ def main(args):
 	device		= torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 	# init model and tokenizer in cpu first
-	nn_init(device, args.dataset)
-
+	model, tokenizer = nn_init(device, args.dataset)
 	# Define the Attribution function
-	attr_func = DiscretetizedIntegratedGradients(nn_forward_func)
+	attr_func = DiscretetizedIntegratedGradients(lambda *args, **kwargs: nn_forward_func(model, *args, **kwargs))
 
 	# load the dataset
 	if args.dataset == 'imdb':
@@ -74,7 +72,7 @@ def main(args):
 		raise NotImplementedError
 
 	# get ref token embedding
-	base_token_emb = get_base_token_emb(device)
+	base_token_emb = get_base_token_emb(model, tokenizer, device)
 
 	# compute the DIG attributions for all the inputs
 	print('Starting attribution computation...')
@@ -82,7 +80,7 @@ def main(args):
 	log_odds, comps, suffs, count = 0, 0, 0, 0
 	print_step = 2
 	for row in tqdm(data):
-		inp = get_inputs(row[0], device)
+		inp = get_inputs(model, tokenizer, row[0], device)
 		input_ids, ref_input_ids, input_embed, ref_input_embed, position_embed, ref_position_embed, type_embed, ref_type_embed, attention_mask = inp
 		scaled_features 		= monotonic_paths.scale_inputs(input_ids.squeeze().tolist(), ref_input_ids.squeeze().tolist(),\
 											device, auxiliary_data, steps=args.steps, factor=args.factor, strategy=args.strategy)
@@ -96,7 +94,7 @@ def main(args):
 		# print the metrics
 		if count % print_step == 0:
 			print('Log-odds: ', np.round(log_odds / count, 4), 'Comprehensiveness: ', np.round(comps / count, 4), 'Sufficiency: ', np.round(suffs / count, 4))
-
+		break
 	print('Log-odds: ', np.round(log_odds / count, 4), 'Comprehensiveness: ', np.round(comps / count, 4), 'Sufficiency: ', np.round(suffs / count, 4))
 
 if __name__ == '__main__':

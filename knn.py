@@ -17,7 +17,7 @@ def main(args):
 	print(f'Starting KNN computation..')
 
 	model, tokenizer	= nn_init(device, args.dataset, returns=True)
-	word_features		= get_word_embeddings().cpu().detach().numpy()
+	word_features		= get_word_embeddings(model).cpu().detach().numpy()
 	word_idx_map		= tokenizer.get_vocab()
 	A					= kneighbors_graph(word_features, args.nbrs, mode='distance', n_jobs=args.procs)
 
