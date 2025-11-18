@@ -26,10 +26,10 @@ Discretized Integrated Gradients for Explaining Language Models (EMNLP 2021) <a 
   python knn.py -dataset sst2 -nn distilbert
   
   # DIG (strategy: Greedy)
-  python main.py -dataset sst2 -nn distilbert -strategy greedy
+  python run_eval_dig.py --dataset sst2 --model distilbert --strategy greedy # Greedy by default
 
   # DIG (strategy: MaxCount)
-  python main.py -dataset sst2 -nn distilbert -strategy maxcount
+  python run_eval_dig.py --dataset sst2 --model distilbert --strategy maxcount 
   ```
   Similarly, commands can be changed for other settings.
   
