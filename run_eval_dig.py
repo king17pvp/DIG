@@ -27,7 +27,6 @@ elif args.dataset == 'sst2':
 elif args.dataset == 'rotten':
     dataset	= load_dataset('rotten_tomatoes')['test']
     data	= list(zip(dataset['text'], dataset['label']))
-data = list(zip(dataset['sentence'], dataset['label'], dataset['idx']))
 print('Starting attribution computation...')
 inputs = []
 log_odds, comps, suffs, count, total_time = 0, 0, 0, 0, 0
