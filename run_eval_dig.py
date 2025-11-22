@@ -3,7 +3,11 @@ from datasets import load_dataset
 from tqdm import tqdm
 import numpy as np
 import argparse
-
+import torch
+import random
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default='distilbert', help='Model name or path')
 parser.add_argument('--dataset', choices=['sst2', 'imdb', 'rotten'])
